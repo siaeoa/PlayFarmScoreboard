@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "playfarmscoreboard",
+  "version": "${version}",
+  "name": "PlayFarmScoreboard",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "icon": "assets/playfarmscoreboard/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-datagen": [
+      "by.siaroa.playfarmscoreboard.client.PlayfarmscoreboardDataGenerator"
+    ],
+    "client": [
+      "by.siaroa.playfarmscoreboard.client.PlayfarmscoreboardClient"
+    ],
+    "main": [
+      "by.siaroa.playfarmscoreboard.Playfarmscoreboard"
+    ]
+  },
+  "mixins": [
+    "playfarmscoreboard.mixins.json",
+    {
+      "config": "playfarmscoreboard.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
