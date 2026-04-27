@@ -25,6 +25,17 @@ def mcVersion = project.minecraft_version.toString()
 def versionedClientDir = mcVersion.startsWith("1.21.4")
         ? "src/client1214/java"
         : "src/client1211/java"
+def supportedVersionDefaults = [
+        "1.21.4" : [yarn: "1.21.4+build.8", fabricApi: "0.119.4+1.21.4"],
+        "1.21.11": [yarn: "1.21.11+build.5", fabricApi: "0.141.3+1.21.11"]
+]
+def matchedVersionKey = supportedVersionDefaults.keySet().find { mcVersion.startsWith(it) }
+def selectedYarnMappings = project.findProperty("yarn_mappings_override")?.toString()
+        ?: (matchedVersionKey != null ? supportedVersionDefaults[matchedVersionKey].yarn : project.yarn_mappings.toString())
+def selectedFabricApiVersion = project.findProperty("fabric_version_override")?.toString()
+        ?: (matchedVersionKey != null ? supportedVersionDefaults[matchedVersionKey].fabricApi : project.fabric_version.toString())
+
+logger.lifecycle("PlayFarmScoreboard build target: MC ${mcVersion}, Yarn ${selectedYarnMappings}, Fabric API ${selectedFabricApiVersion}")
 
 sourceSets {
     client {
@@ -49,10 +60,12 @@ repositories {
 dependencies {
     // To change the versions see the gradle.properties file
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    mappings "net.fabricmc:yarn:${selectedYarnMappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${selectedFabricApiVersion}"
+    testImplementation "org.junit.jupiter:junit-jupiter:5.11.4"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher:1.11.4"
 }
 
 processResources {
@@ -78,6 +91,10 @@ tasks.withType(JavaCompile).configureEach {
     if (targetJavaVersion >= 10 || JavaVersion.current().isJava10Compatible()) {
         it.options.release.set(targetJavaVersion)
     }
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
 }
 
 java {
