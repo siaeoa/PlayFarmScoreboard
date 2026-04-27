@@ -9,9 +9,11 @@ import com.google.gson.JsonParser;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -19,29 +21,42 @@ import java.util.Set;
 
 public final class CustomHudStorage {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final String BUNDLED_HUD_ZIP_RESOURCE = "hud.zip";
     private static final Path FILE_PATH = FabricLoader.getInstance().getConfigDir()
             .resolve("playfarmscoreboard")
             .resolve("custom_hud.json");
+    private static boolean bossBarHidden;
 
     private CustomHudStorage() {
     }
 
+    public static boolean resetToInitialHud(CustomHudState state) {
+        if (loadBundledHudZip(state)) {
+            return true;
+        }
+        state.resetToDefault();
+        save(state);
+        return false;
+    }
+
     public static void load(CustomHudState state) {
         if (!Files.exists(FILE_PATH)) {
-            // 첫 실행이면 빈 파일 찾지 말고 바로 기본 HUD 생성으로 진행.
-            state.resetToDefault();
-            save(state);
+            bossBarHidden = false;
+            // 첫 실행이면 리소스 hud.zip을 우선 적용하고, 없으면 기본 HUD로 간다.
+            resetToInitialHud(state);
             return;
         }
 
         try {
             String raw = Files.readString(FILE_PATH, StandardCharsets.UTF_8);
             JsonObject root = JsonParser.parseString(raw).getAsJsonObject();
+            bossBarHidden = getBoolean(root, "bossBarHidden", false);
 
             int canvasWidth = getInt(root, "canvasWidth", state.getCanvasWidth());
             int canvasHeight = getInt(root, "canvasHeight", state.getCanvasHeight());
             int hudX = getInt(root, "hudX", state.getHudX());
             int hudY = getInt(root, "hudY", state.getHudY());
+            int hudScale = getInt(root, "hudScale", state.getHudScalePercent());
 
             List<HudElement> elements = new ArrayList<>();
             if (root.has("elements") && root.get("elements").isJsonArray()) {
@@ -59,15 +74,27 @@ public final class CustomHudStorage {
 
             if (elements.isEmpty()) {
                 // 파일은 있는데 내용이 비면, 사용자는 그냥 "초기화된 상태"로 이해하는 게 편하다.
-                state.resetToDefault();
+                resetToInitialHud(state);
             } else {
-                state.replaceAll(elements, canvasWidth, canvasHeight, hudX, hudY);
+                state.replaceAll(elements, canvasWidth, canvasHeight, hudX, hudY, hudScale);
             }
         } catch (Exception ignored) {
+            bossBarHidden = false;
             // 저장 파일이 깨졌을 때 앱까지 멈출 필요는 없다. 기본값으로 회복하고 지나간다.
-            state.resetToDefault();
-            save(state);
+            resetToInitialHud(state);
         }
+    }
+
+    public static boolean isBossBarHidden() {
+        return bossBarHidden;
+    }
+
+    public static void setBossBarHidden(CustomHudState state, boolean hidden) {
+        if (bossBarHidden == hidden) {
+            return;
+        }
+        bossBarHidden = hidden;
+        save(state);
     }
 
     public static void save(CustomHudState state) {
@@ -79,6 +106,8 @@ public final class CustomHudStorage {
             root.addProperty("canvasHeight", state.getCanvasHeight());
             root.addProperty("hudX", state.getHudX());
             root.addProperty("hudY", state.getHudY());
+            root.addProperty("hudScale", state.getHudScalePercent());
+            root.addProperty("bossBarHidden", bossBarHidden);
 
             JsonArray array = new JsonArray();
             for (HudElement element : state.getElements()) {
@@ -163,6 +192,7 @@ public final class CustomHudStorage {
             object.addProperty("y", textLabel.y());
             object.addProperty("text", textLabel.text());
             object.addProperty("color", textLabel.color());
+            object.addProperty("fontSize", textLabel.fontSize());
             return object;
         }
 
@@ -217,7 +247,8 @@ public final class CustomHudStorage {
                     getInt(object, "x", 0),
                     getInt(object, "y", 0),
                     getString(object, "text", ""),
-                    getInt(object, "color", HudRenderUtil.argb(255, 255, 255, 255))
+                    getInt(object, "color", HudRenderUtil.argb(255, 255, 255, 255)),
+                    getInt(object, "fontSize", HudElement.TextLabel.DEFAULT_FONT_SIZE)
             );
             case "image" -> new HudElement.ImageSprite(
                     getInt(object, "x", 0),
@@ -328,6 +359,40 @@ public final class CustomHudStorage {
                 }
             });
         } catch (Exception ignored) {
+        }
+    }
+
+    private static boolean loadBundledHudZip(CustomHudState state) {
+        try (InputStream input = CustomHudStorage.class.getClassLoader().getResourceAsStream(BUNDLED_HUD_ZIP_RESOURCE)) {
+            if (input == null) {
+                return false;
+            }
+
+            Path hudDir = FILE_PATH.getParent();
+            Files.createDirectories(hudDir);
+            Path tempZip = hudDir.resolve("bundled_hud_import.zip");
+            Files.copy(input, tempZip, StandardCopyOption.REPLACE_EXISTING);
+
+            try {
+                CustomHudExchange.ImportedHudData imported = CustomHudExchange.importFromZip(tempZip);
+                state.replaceAll(
+                        imported.elements(),
+                        imported.canvasWidth(),
+                        imported.canvasHeight(),
+                        imported.hudX(),
+                        imported.hudY(),
+                        imported.hudScalePercent()
+                );
+                save(state);
+                return true;
+            } finally {
+                try {
+                    Files.deleteIfExists(tempZip);
+                } catch (Exception ignored) {
+                }
+            }
+        } catch (Exception ignored) {
+            return false;
         }
     }
 }

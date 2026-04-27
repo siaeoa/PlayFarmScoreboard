@@ -8,11 +8,14 @@ import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.util.Identifier;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.security.MessageDigest;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -41,16 +44,37 @@ public final class CustomHudImageTextureManager {
         Path normalized = path.toAbsolutePath().normalize();
         String managedPath = ensureManagedCopy(normalized);
         if (managedPath != null) {
-            return getOrLoad(managedPath);
+            TextureInfo managed = getOrLoad(managedPath);
+            if (managed != null) {
+                return managed;
+            }
         }
-        return getOrLoad(normalized.toString());
+        TextureInfo direct = getOrLoad(normalized.toString());
+        if (direct != null) {
+            return direct;
+        }
+
+        // 디코더가 확장자를 못 읽을 때를 대비해 ImageIO로 PNG 변환 후 재시도한다.
+        String transcoded = transcodeImageToManagedPng(normalized);
+        if (transcoded != null) {
+            return getOrLoad(transcoded);
+        }
+        return null;
+    }
+
+    public static TextureInfo preload(BufferedImage image) {
+        String managedPath = saveBufferedImageToStore(image);
+        if (managedPath == null) {
+            return null;
+        }
+        return getOrLoad(managedPath);
     }
 
     public static void drawImage(DrawContext context, String sourcePath, int x, int y, int width, int height, boolean clipOnResizeShrink) {
         TextureInfo info = getOrLoad(sourcePath);
         if (info == null) {
             context.fill(x, y, x + width, y + height, 0xAA131D26);
-            context.drawStrokedRectangle(x, y, width, height, 0xFF8B5A5A);
+            HudRenderUtil.drawStrokedRect(context, x, y, width, height, 0xFF8B5A5A);
             return;
         }
 
@@ -176,19 +200,81 @@ public final class CustomHudImageTextureManager {
                 }
                 digest.update(buffer, 0, read);
             }
-            byte[] hash = digest.digest();
-            StringBuilder hex = new StringBuilder(hash.length * 2);
-            for (byte value : hash) {
-                int unsigned = value & 0xFF;
-                if (unsigned < 16) {
-                    hex.append('0');
-                }
-                hex.append(Integer.toHexString(unsigned));
-            }
-            return hex.toString();
+            return toHex(digest.digest());
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private static String transcodeImageToManagedPng(Path sourcePath) {
+        try {
+            if (!Files.isRegularFile(sourcePath)) {
+                return null;
+            }
+            BufferedImage decoded = ImageIO.read(sourcePath.toFile());
+            if (decoded == null) {
+                return null;
+            }
+            return saveBufferedImageToStore(decoded);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static String saveBufferedImageToStore(BufferedImage image) {
+        if (image == null) {
+            return null;
+        }
+
+        try {
+            Files.createDirectories(IMAGE_STORE_DIR);
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            if (!ImageIO.write(image, "png", output)) {
+                return null;
+            }
+            byte[] encoded = output.toByteArray();
+            String hash = contentHashHex(encoded);
+            if (hash == null || hash.isBlank()) {
+                return null;
+            }
+
+            Path target = IMAGE_STORE_DIR.resolve(hash + ".png");
+            if (!Files.exists(target)) {
+                Files.write(target, encoded);
+            }
+            return target.toAbsolutePath().normalize().toString();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static String contentHashHex(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            digest.update(bytes);
+            return toHex(digest.digest());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static String toHex(byte[] hash) {
+        if (hash == null || hash.length == 0) {
+            return null;
+        }
+        StringBuilder hex = new StringBuilder(hash.length * 2);
+        for (byte value : hash) {
+            int unsigned = value & 0xFF;
+            if (unsigned < 16) {
+                hex.append('0');
+            }
+            hex.append(Integer.toHexString(unsigned));
+        }
+        return hex.toString();
     }
 
     private static String fileExtension(String fileName) {

@@ -27,10 +27,20 @@ public final class CustomHudPlaceholderResolver {
     private static final Pattern FLY_HOUR_PATTERN = Pattern.compile("(\\d+)\\s*(?:시|시간)");
     private static final Pattern FLY_MIN_PATTERN = Pattern.compile("(\\d+)\\s*분");
     private static final Pattern FLY_SEC_PATTERN = Pattern.compile("(\\d+)\\s*초");
-    private static final Pattern AUTO_PLANT_PATTERN = Pattern.compile("자동\\s*심기\\s*(?:[:：]\\s*)?([0-9][0-9,]*)\\s*회");
+    private static final Pattern FLY_KEYWORD_PATTERN = Pattern.compile("(?i)(?:플라이|fly)");
+    private static final Pattern FLY_LABEL_PATTERN = Pattern.compile("(?i)(?:플라이|fly)\\s*(?:남은\\s*시간)?\\s*[:：-]?\\s*([^\\n\\r]+)");
+    private static final Pattern FLY_CURRENT_PATTERN = Pattern.compile("\\(현재: ([^)]+)\\)");
+    private static final Pattern FLY_REMAINING_PATTERN = Pattern.compile("\\(\\s*남은\\s*시간\\s*[:：]\\s*([^)]*?)\\s*\\)");
+    private static final Pattern AUTO_PLANT_CURRENT_PATTERN = Pattern.compile("\\(현재\\s*[:：]\\s*([0-9][0-9,]*)\\s*회\\s*\\)");
+    private static final Pattern AUTO_PLANT_KEYWORD_PATTERN = Pattern.compile("(?:자동\\s*심기|자심)");
+    private static final Pattern AUTO_PLANT_REMAINING_PATTERN = Pattern.compile("남은\\s*횟수\\s*[:：]\\s*([0-9][0-9,]*)\\s*회");
+    private static final Pattern AUTO_PLANT_PATTERN = Pattern.compile("(?:자동\\s*심기|자심)\\s*(?:[:：]\\s*)?([0-9][0-9,]*)\\s*회");
+    private static final Pattern CHANNEL_DISPLAY_PATTERN = Pattern.compile("(스폰|섬)\\s*(\\d{1,3})\\s*(?:번\\s*)?채널", Pattern.CASE_INSENSITIVE);
+    private static final Pattern FORMAT_CODE_PATTERN = Pattern.compile("§.");
 
     private static long lastSampleTick = Long.MIN_VALUE;
     private static BossBarSnapshot cachedSnapshot = BossBarSnapshot.EMPTY;
+    private static String recentChannelDisplay = "";
     private static boolean flyOverlayVisible;
     private static boolean autoPlantOverlayVisible;
 
@@ -73,6 +83,12 @@ public final class CustomHudPlaceholderResolver {
             CustomHudFlyStorage.updateAutoPlant(latestAutoPlant);
             cachedSnapshot = cachedSnapshot.withAutoPlant(latestAutoPlant);
             autoPlantOverlayVisible = true;
+        }
+
+        String latestChannel = parseChannelText(rawOverlayText);
+        if (!latestChannel.isBlank()) {
+            recentChannelDisplay = latestChannel;
+            cachedSnapshot = cachedSnapshot.withChannel(latestChannel);
         }
     }
 
@@ -126,6 +142,12 @@ public final class CustomHudPlaceholderResolver {
                 channel = candidate.channelDisplay();
                 channelWeight = weight;
             }
+        }
+
+        if (!channel.isBlank()) {
+            recentChannelDisplay = channel;
+        } else if (!recentChannelDisplay.isBlank()) {
+            channel = recentChannelDisplay;
         }
 
         BossBarSnapshot resolved = new BossBarSnapshot(money, cash, chat, channel, "", "");
@@ -277,16 +299,44 @@ public final class CustomHudPlaceholderResolver {
         if (raw == null || raw.isBlank()) {
             return "";
         }
-
-        String lower = raw.toLowerCase();
-        if (!raw.contains("플라이") && !lower.contains("fly")) {
+        String normalized = normalizeOverlayText(raw);
+        if (normalized.isBlank()) {
             return "";
         }
 
-        String day = findUnit(FLY_DAY_PATTERN, raw, "일");
-        String hour = findUnit(FLY_HOUR_PATTERN, raw, "시간");
-        String minute = findUnit(FLY_MIN_PATTERN, raw, "분");
-        String second = findUnit(FLY_SEC_PATTERN, raw, "초");
+        String lower = normalized.toLowerCase(Locale.ROOT);
+        String parseTarget = "";
+        boolean dedicatedRemainingSource = false;
+
+        Matcher currentMatcher = FLY_CURRENT_PATTERN.matcher(normalized);
+        if (currentMatcher.find()) {
+            // "(현재: N)"가 있으면 N만 플라이 시간 소스로 쓴다.
+            parseTarget = currentMatcher.group(1);
+            dedicatedRemainingSource = true;
+        } else {
+            Matcher remainingMatcher = FLY_REMAINING_PATTERN.matcher(normalized);
+            if (remainingMatcher.find() && FLY_KEYWORD_PATTERN.matcher(normalized).find()) {
+                parseTarget = remainingMatcher.group(1);
+                dedicatedRemainingSource = true;
+            }
+        }
+
+        if (parseTarget.isBlank()) {
+            Matcher labelMatcher = FLY_LABEL_PATTERN.matcher(normalized);
+            if (labelMatcher.find()) {
+                parseTarget = labelMatcher.group(1);
+            } else if (normalized.contains("플라이") || lower.contains("fly")) {
+                parseTarget = normalized;
+            }
+        }
+        if (parseTarget.isBlank()) {
+            return "";
+        }
+
+        String day = findUnit(FLY_DAY_PATTERN, parseTarget, "일");
+        String hour = findUnit(FLY_HOUR_PATTERN, parseTarget, "시간");
+        String minute = findUnit(FLY_MIN_PATTERN, parseTarget, "분");
+        String second = findUnit(FLY_SEC_PATTERN, parseTarget, "초");
 
         // 표기는 최대한 사람이 읽기 편한 순서로만 정리한다. 복잡한 정규화는 여기서 욕심내지 않는다.
         StringBuilder builder = new StringBuilder();
@@ -294,6 +344,12 @@ public final class CustomHudPlaceholderResolver {
         appendUnit(builder, hour);
         appendUnit(builder, minute);
         appendUnit(builder, second);
+        if (builder.isEmpty()) {
+            if (dedicatedRemainingSource) {
+                return parseTarget.trim();
+            }
+            return "";
+        }
         return builder.toString();
     }
 
@@ -301,25 +357,94 @@ public final class CustomHudPlaceholderResolver {
         if (raw == null || raw.isBlank()) {
             return "";
         }
+        String normalized = normalizeOverlayText(raw);
+        if (normalized.isBlank()) {
+            return "";
+        }
 
-        Matcher matcher = AUTO_PLANT_PATTERN.matcher(raw);
+        Matcher currentMatcher = AUTO_PLANT_CURRENT_PATTERN.matcher(normalized);
+        if (currentMatcher.find()) {
+            return formatAutoPlantCount(currentMatcher.group(1));
+        }
+
+        Matcher remainingMatcher = AUTO_PLANT_REMAINING_PATTERN.matcher(normalized);
+        if (remainingMatcher.find() && AUTO_PLANT_KEYWORD_PATTERN.matcher(normalized).find()) {
+            return formatAutoPlantCount(remainingMatcher.group(1));
+        }
+
+        Matcher matcher = AUTO_PLANT_PATTERN.matcher(normalized);
         if (!matcher.find()) {
             return "";
         }
 
-        String numeric = matcher.group(1).replace(",", "");
+        return formatAutoPlantCount(matcher.group(1));
+    }
+
+    private static String formatAutoPlantCount(String rawNumeric) {
+        if (rawNumeric == null) {
+            return "";
+        }
+
+        String numeric = rawNumeric.replace(",", "");
         if (numeric.isEmpty()) {
             return "";
         }
 
         try {
-            // 오늘은 숫자 포맷만 확실히 맞추자. 더 고급 표시 규칙은 필요해지면 내일 붙이면 된다.
             NumberFormat formatter = NumberFormat.getIntegerInstance(Locale.US);
             formatter.setGroupingUsed(true);
             return formatter.format(new BigInteger(numeric));
         } catch (NumberFormatException ignored) {
             return "";
         }
+    }
+
+    private static String parseChannelText(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+
+        String normalized = normalizeOverlayText(raw);
+        if (normalized.isBlank()) {
+            return "";
+        }
+
+        Matcher displayMatcher = CHANNEL_DISPLAY_PATTERN.matcher(normalized);
+        if (displayMatcher.find()) {
+            String scope = displayMatcher.group(1);
+            String channelNumber = displayMatcher.group(2);
+            if (scope == null || channelNumber == null) {
+                return "";
+            }
+            boolean spawn = scope.toLowerCase(Locale.ROOT).contains("스폰");
+            return spawn
+                    ? "스폰 " + channelNumber + "번 채널"
+                    : "섬 " + channelNumber + "번 채널";
+        }
+
+        String compact = normalizeForParsing(normalized);
+        if (compact.isBlank()) {
+            return "";
+        }
+
+        Matcher channelMatcher = CHANNEL_PATTERN.matcher(compact);
+        if (!channelMatcher.find()) {
+            return "";
+        }
+
+        char scope = Character.toLowerCase(channelMatcher.group(1).charAt(0));
+        String channelNumber = channelMatcher.group(2);
+        if (scope == 'l') {
+            return "스폰 " + channelNumber + "번 채널";
+        }
+        return "섬 " + channelNumber + "번 채널";
+    }
+
+    private static String normalizeOverlayText(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        return FORMAT_CODE_PATTERN.matcher(raw).replaceAll("").replace('\u00A0', ' ').trim();
     }
 
     private static String findUnit(Pattern pattern, String value, String suffix) {
@@ -412,6 +537,10 @@ public final class CustomHudPlaceholderResolver {
 
         private BossBarSnapshot withAutoPlant(String autoPlant) {
             return new BossBarSnapshot(money, cash, chatDisplay, channelDisplay, flyDisplay, autoPlant);
+        }
+
+        private BossBarSnapshot withChannel(String channel) {
+            return new BossBarSnapshot(money, cash, chatDisplay, channel, flyDisplay, autoPlantDisplay);
         }
     }
 }

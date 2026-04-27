@@ -12,3 +12,6 @@ run/
 
 # OS
 .DS_Store
+
+# Bundled default HUD package
+src/client/resources/hud.zip

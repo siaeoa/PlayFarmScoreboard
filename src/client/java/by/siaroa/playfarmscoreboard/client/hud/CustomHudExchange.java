@@ -115,6 +115,7 @@ public final class CustomHudExchange {
         int canvasHeight = getInt(root, "canvasHeight", 180);
         int hudX = getInt(root, "hudX", 24);
         int hudY = getInt(root, "hudY", 24);
+        int hudScale = getInt(root, "hudScale", CustomHudState.DEFAULT_HUD_SCALE_PERCENT);
 
         List<HudElement> elements = new ArrayList<>();
         if (root.has("elements") && root.get("elements").isJsonArray()) {
@@ -134,7 +135,7 @@ public final class CustomHudExchange {
             throw new IOException("ZIP does not contain valid HUD elements");
         }
 
-        return new ImportedHudData(elements, canvasWidth, canvasHeight, hudX, hudY);
+        return new ImportedHudData(elements, canvasWidth, canvasHeight, hudX, hudY, hudScale);
     }
 
     private static Map<String, String> buildImageEntryMap(List<HudElement> elements) throws IOException {
@@ -174,6 +175,7 @@ public final class CustomHudExchange {
         root.addProperty("canvasHeight", state.getCanvasHeight());
         root.addProperty("hudX", state.getHudX());
         root.addProperty("hudY", state.getHudY());
+        root.addProperty("hudScale", state.getHudScalePercent());
 
         JsonArray array = new JsonArray();
         for (HudElement element : state.getElements()) {
@@ -251,6 +253,7 @@ public final class CustomHudExchange {
             object.addProperty("y", textLabel.y());
             object.addProperty("text", textLabel.text());
             object.addProperty("color", textLabel.color());
+            object.addProperty("fontSize", textLabel.fontSize());
             return object;
         }
 
@@ -306,7 +309,8 @@ public final class CustomHudExchange {
                     getInt(object, "x", 0),
                     getInt(object, "y", 0),
                     getString(object, "text", ""),
-                    getInt(object, "color", HudRenderUtil.argb(255, 255, 255, 255))
+                    getInt(object, "color", HudRenderUtil.argb(255, 255, 255, 255)),
+                    getInt(object, "fontSize", HudElement.TextLabel.DEFAULT_FONT_SIZE)
             );
             case "image" -> new HudElement.ImageSprite(
                     getInt(object, "x", 0),
@@ -454,7 +458,8 @@ public final class CustomHudExchange {
             int canvasWidth,
             int canvasHeight,
             int hudX,
-            int hudY
+            int hudY,
+            int hudScalePercent
     ) {
     }
 }

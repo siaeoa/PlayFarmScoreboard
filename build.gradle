@@ -21,6 +21,17 @@ loom {
     }
 }
 
+def mcVersion = project.minecraft_version.toString()
+def versionedClientDir = mcVersion.startsWith("1.21.4")
+        ? "src/client1214/java"
+        : "src/client1211/java"
+
+sourceSets {
+    client {
+        java.srcDir(versionedClientDir)
+    }
+}
+
 fabricApi {
     configureDataGeneration {
         client = true

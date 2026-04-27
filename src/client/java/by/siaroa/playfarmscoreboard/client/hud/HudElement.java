@@ -4,6 +4,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -169,21 +170,166 @@ public interface HudElement {
         }
     }
 
-    record TextLabel(int x, int y, String text, int color) implements HudElement {
+    record TextLabel(int x, int y, String text, int color, int fontSize) implements HudElement {
+        public static final int DEFAULT_FONT_SIZE = 9;
+        public static final int MIN_FONT_SIZE = 6;
+        public static final int MAX_FONT_SIZE = 48;
+        private static final int APPROX_GLYPH_WIDTH = 6;
+        private static final int APPROX_TEXT_HEIGHT = 9;
+        private static Class<?> matrixClass;
+        private static Method matrixPushMethod;
+        private static Method matrixPopMethod;
+        private static Method matrixTranslate2fMethod;
+        private static Method matrixTranslate2dMethod;
+        private static Method matrixTranslate3fMethod;
+        private static Method matrixTranslate3dMethod;
+        private static Method matrixScale2fMethod;
+        private static Method matrixScale3fMethod;
+
+        public TextLabel(int x, int y, String text, int color) {
+            this(x, y, text, color, DEFAULT_FONT_SIZE);
+        }
+
+        public TextLabel {
+            text = text == null ? "" : text;
+            fontSize = HudRenderUtil.clamp(fontSize, MIN_FONT_SIZE, MAX_FONT_SIZE);
+        }
+
         @Override
         public void render(DrawContext context, TextRenderer textRenderer, int originX, int originY) {
             MinecraftClient client = MinecraftClient.getInstance();
             // 편집 화면에선 값 대신 토큰 원문을 보여준다. 그래야 "뭘 적었는지" 한눈에 보인다.
             boolean editorOpen = client != null && client.currentScreen instanceof CustomHudEditorScreen;
             String resolvedText = editorOpen ? text : CustomHudPlaceholderResolver.resolve(text);
-            context.drawText(textRenderer, resolvedText, originX + x, originY + y, color, true);
+            float scale = fontSize / (float) DEFAULT_FONT_SIZE;
+            if (Math.abs(scale - 1.0F) < 0.001F) {
+                context.drawText(textRenderer, resolvedText, originX + x, originY + y, color, true);
+                return;
+            }
+
+            Object matrices = context.getMatrices();
+            try {
+                pushMatrix(matrices);
+                try {
+                    translateMatrix(matrices, originX + x, originY + y);
+                    scaleMatrix(matrices, scale);
+                    context.drawText(textRenderer, resolvedText, 0, 0, color, true);
+                } finally {
+                    popMatrix(matrices);
+                }
+            } catch (Exception ignored) {
+                // 매트릭스 API가 바뀌어도 텍스트 자체는 보이게 폴백한다.
+                context.drawText(textRenderer, resolvedText, originX + x, originY + y, color, true);
+            }
         }
 
         @Override
         public Bounds bounds() {
             // 실제 폰트 폭 측정은 비싸서, 여기선 대략 폭으로 히트박스만 빠르게 계산.
-            int estimatedWidth = Math.max(1, text.length() * 6);
-            return new Bounds(x, y, x + estimatedWidth, y + 10);
+            float scale = fontSize / (float) DEFAULT_FONT_SIZE;
+            int estimatedWidth = Math.max(1, (int) Math.ceil(Math.max(1, text.length() * APPROX_GLYPH_WIDTH) * scale));
+            int estimatedHeight = Math.max(1, (int) Math.ceil(APPROX_TEXT_HEIGHT * scale));
+            return new Bounds(x, y, x + estimatedWidth - 1, y + estimatedHeight - 1);
+        }
+
+        private static void pushMatrix(Object matrices) {
+            ensureMatrixMethods(matrices);
+            invokeNoArg(matrixPushMethod, matrices);
+        }
+
+        private static void popMatrix(Object matrices) {
+            ensureMatrixMethods(matrices);
+            invokeNoArg(matrixPopMethod, matrices);
+        }
+
+        private static void translateMatrix(Object matrices, int tx, int ty) {
+            ensureMatrixMethods(matrices);
+            if (matrixTranslate2fMethod != null) {
+                invoke(matrixTranslate2fMethod, matrices, (float) tx, (float) ty);
+                return;
+            }
+            if (matrixTranslate2dMethod != null) {
+                invoke(matrixTranslate2dMethod, matrices, (double) tx, (double) ty);
+                return;
+            }
+            if (matrixTranslate3fMethod != null) {
+                invoke(matrixTranslate3fMethod, matrices, (float) tx, (float) ty, 0.0F);
+                return;
+            }
+            if (matrixTranslate3dMethod != null) {
+                invoke(matrixTranslate3dMethod, matrices, (double) tx, (double) ty, 0.0D);
+                return;
+            }
+            throw new IllegalStateException("Matrix translate method not found");
+        }
+
+        private static void scaleMatrix(Object matrices, float scale) {
+            ensureMatrixMethods(matrices);
+            if (matrixScale2fMethod != null) {
+                invoke(matrixScale2fMethod, matrices, scale, scale);
+                return;
+            }
+            if (matrixScale3fMethod != null) {
+                invoke(matrixScale3fMethod, matrices, scale, scale, 1.0F);
+                return;
+            }
+            throw new IllegalStateException("Matrix scale method not found");
+        }
+
+        private static void ensureMatrixMethods(Object matrices) {
+            if (matrices == null) {
+                throw new IllegalStateException("DrawContext matrices missing");
+            }
+            Class<?> cls = matrices.getClass();
+            if (cls == matrixClass && matrixPushMethod != null && matrixPopMethod != null) {
+                return;
+            }
+
+            matrixClass = cls;
+            matrixPushMethod = findMethod(cls, "pushMatrix");
+            if (matrixPushMethod == null) {
+                matrixPushMethod = findMethod(cls, "push");
+            }
+            matrixPopMethod = findMethod(cls, "popMatrix");
+            if (matrixPopMethod == null) {
+                matrixPopMethod = findMethod(cls, "pop");
+            }
+
+            matrixTranslate2fMethod = findMethod(cls, "translate", float.class, float.class);
+            matrixTranslate2dMethod = findMethod(cls, "translate", double.class, double.class);
+            matrixTranslate3fMethod = findMethod(cls, "translate", float.class, float.class, float.class);
+            matrixTranslate3dMethod = findMethod(cls, "translate", double.class, double.class, double.class);
+            matrixScale2fMethod = findMethod(cls, "scale", float.class, float.class);
+            matrixScale3fMethod = findMethod(cls, "scale", float.class, float.class, float.class);
+
+            if (matrixPushMethod == null || matrixPopMethod == null) {
+                throw new IllegalStateException("Matrix push/pop methods not found");
+            }
+        }
+
+        private static Method findMethod(Class<?> cls, String name, Class<?>... parameterTypes) {
+            try {
+                Method method = cls.getMethod(name, parameterTypes);
+                method.setAccessible(true);
+                return method;
+            } catch (ReflectiveOperationException ignored) {
+                return null;
+            }
+        }
+
+        private static void invokeNoArg(Method method, Object target) {
+            if (method == null) {
+                throw new IllegalStateException("Missing matrix method");
+            }
+            invoke(method, target);
+        }
+
+        private static void invoke(Method method, Object target, Object... args) {
+            try {
+                method.invoke(target, args);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("Failed to invoke matrix method: " + method.getName(), e);
+            }
         }
     }
 

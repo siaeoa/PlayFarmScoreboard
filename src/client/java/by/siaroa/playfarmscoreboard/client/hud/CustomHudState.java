@@ -10,6 +10,9 @@ public final class CustomHudState {
     private static final int DEFAULT_CANVAS_HEIGHT = 180;
     private static final int DEFAULT_HUD_X = 24;
     private static final int DEFAULT_HUD_Y = 24;
+    public static final int DEFAULT_HUD_SCALE_PERCENT = 100;
+    public static final int MIN_HUD_SCALE_PERCENT = 50;
+    public static final int MAX_HUD_SCALE_PERCENT = 300;
     private static final int HISTORY_LIMIT = 80;
 
     private final List<HudElement> elements = new ArrayList<>();
@@ -20,6 +23,7 @@ public final class CustomHudState {
     private int canvasHeight = DEFAULT_CANVAS_HEIGHT;
     private int hudX = DEFAULT_HUD_X;
     private int hudY = DEFAULT_HUD_Y;
+    private int hudScalePercent = DEFAULT_HUD_SCALE_PERCENT;
 
     public CustomHudState() {
         resetToDefault();
@@ -45,8 +49,23 @@ public final class CustomHudState {
         return hudY;
     }
 
+    public int getHudScalePercent() {
+        return hudScalePercent;
+    }
+
+    public float getHudScale() {
+        return hudScalePercent / 100.0F;
+    }
+
     public void addElement(HudElement element) {
         mutate(() -> elements.add(element));
+    }
+
+    public void addElements(List<HudElement> newElements) {
+        if (newElements == null || newElements.isEmpty()) {
+            return;
+        }
+        mutate(() -> elements.addAll(newElements));
     }
 
     public void addElementAtBottom(HudElement element) {
@@ -70,6 +89,18 @@ public final class CustomHudState {
     public void setHudPositionDirect(int x, int y) {
         hudX = x;
         hudY = y;
+    }
+
+    public void setHudScalePercent(int scalePercent) {
+        int normalized = normalizeHudScalePercent(scalePercent);
+        if (normalized == hudScalePercent) {
+            return;
+        }
+        mutate(() -> hudScalePercent = normalized);
+    }
+
+    public void setHudScalePercentDirect(int scalePercent) {
+        hudScalePercent = normalizeHudScalePercent(scalePercent);
     }
 
     public HudElement.Bounds getContentBounds() {
@@ -107,6 +138,20 @@ public final class CustomHudState {
             return false;
         }
         mutate(() -> elements.remove(index));
+        return true;
+    }
+
+    public boolean removeElements(List<Integer> indices) {
+        List<Integer> normalized = normalizeIndices(indices);
+        if (normalized.isEmpty()) {
+            return false;
+        }
+
+        mutate(() -> {
+            for (int i = normalized.size() - 1; i >= 0; i--) {
+                elements.remove((int) normalized.get(i));
+            }
+        });
         return true;
     }
 
@@ -179,6 +224,32 @@ public final class CustomHudState {
         return true;
     }
 
+    public boolean translateElements(List<Integer> indices, int deltaX, int deltaY) {
+        List<Integer> normalized = normalizeIndices(indices);
+        if (normalized.isEmpty()) {
+            return false;
+        }
+        if (deltaX == 0 && deltaY == 0) {
+            return true;
+        }
+
+        List<HudElement> translatedElements = new ArrayList<>(normalized.size());
+        for (int index : normalized) {
+            HudElement translated = translateElementBy(elements.get(index), deltaX, deltaY);
+            if (translated == null) {
+                return false;
+            }
+            translatedElements.add(translated);
+        }
+
+        mutate(() -> {
+            for (int i = 0; i < normalized.size(); i++) {
+                elements.set(normalized.get(i), translatedElements.get(i));
+            }
+        });
+        return true;
+    }
+
     public boolean updateTextElement(int index, String newText) {
         if (!isValidIndex(index)) {
             return false;
@@ -193,7 +264,13 @@ public final class CustomHudState {
             return true;
         }
 
-        mutate(() -> elements.set(index, new HudElement.TextLabel(textLabel.x(), textLabel.y(), targetText, textLabel.color())));
+        mutate(() -> elements.set(index, new HudElement.TextLabel(
+                textLabel.x(),
+                textLabel.y(),
+                targetText,
+                textLabel.color(),
+                textLabel.fontSize()
+        )));
         return true;
     }
 
@@ -209,7 +286,41 @@ public final class CustomHudState {
             return true;
         }
 
-        mutate(() -> elements.set(index, new HudElement.TextLabel(textLabel.x(), textLabel.y(), textLabel.text(), newColor)));
+        mutate(() -> elements.set(index, new HudElement.TextLabel(
+                textLabel.x(),
+                textLabel.y(),
+                textLabel.text(),
+                newColor,
+                textLabel.fontSize()
+        )));
+        return true;
+    }
+
+    public boolean updateTextElementFontSize(int index, int newFontSize) {
+        if (!isValidIndex(index)) {
+            return false;
+        }
+        HudElement element = elements.get(index);
+        if (!(element instanceof HudElement.TextLabel textLabel)) {
+            return false;
+        }
+
+        int normalized = HudRenderUtil.clamp(
+                newFontSize,
+                HudElement.TextLabel.MIN_FONT_SIZE,
+                HudElement.TextLabel.MAX_FONT_SIZE
+        );
+        if (textLabel.fontSize() == normalized) {
+            return true;
+        }
+
+        mutate(() -> elements.set(index, new HudElement.TextLabel(
+                textLabel.x(),
+                textLabel.y(),
+                textLabel.text(),
+                textLabel.color(),
+                normalized
+        )));
         return true;
     }
 
@@ -302,7 +413,14 @@ public final class CustomHudState {
         return true;
     }
 
-    public void replaceAll(List<HudElement> newElements, int newCanvasWidth, int newCanvasHeight, int newHudX, int newHudY) {
+    public void replaceAll(
+            List<HudElement> newElements,
+            int newCanvasWidth,
+            int newCanvasHeight,
+            int newHudX,
+            int newHudY,
+            int newHudScalePercent
+    ) {
         // 통째로 갈아끼울 땐 히스토리도 같이 비우자. 안 그러면 undo가 과거 세계선을 소환한다.
         elements.clear();
         elements.addAll(newElements);
@@ -310,6 +428,7 @@ public final class CustomHudState {
         canvasHeight = Math.max(DEFAULT_CANVAS_HEIGHT, newCanvasHeight);
         hudX = newHudX;
         hudY = newHudY;
+        hudScalePercent = normalizeHudScalePercent(newHudScalePercent);
         recomputeCanvasSize();
         clearHistory();
     }
@@ -321,6 +440,7 @@ public final class CustomHudState {
         canvasHeight = DEFAULT_CANVAS_HEIGHT;
         hudX = DEFAULT_HUD_X;
         hudY = DEFAULT_HUD_Y;
+        hudScalePercent = DEFAULT_HUD_SCALE_PERCENT;
 
         int panelX = 8;
         int panelY = 8;
@@ -427,7 +547,8 @@ public final class CustomHudState {
                     Math.max(0, textLabel.x() + deltaX),
                     Math.max(0, textLabel.y() + deltaY),
                     textLabel.text(),
-                    textLabel.color()
+                    textLabel.color(),
+                    textLabel.fontSize()
             );
         }
 
@@ -512,7 +633,7 @@ public final class CustomHudState {
     }
 
     private Snapshot captureSnapshot() {
-        return new Snapshot(new ArrayList<>(elements), canvasWidth, canvasHeight, hudX, hudY);
+        return new Snapshot(new ArrayList<>(elements), canvasWidth, canvasHeight, hudX, hudY, hudScalePercent);
     }
 
     private void restoreSnapshot(Snapshot snapshot) {
@@ -522,6 +643,7 @@ public final class CustomHudState {
         canvasHeight = snapshot.canvasHeight();
         hudX = snapshot.hudX();
         hudY = snapshot.hudY();
+        hudScalePercent = snapshot.hudScalePercent();
     }
 
     private void recomputeCanvasSize() {
@@ -542,6 +664,30 @@ public final class CustomHudState {
         return index >= 0 && index < elements.size();
     }
 
+    private List<Integer> normalizeIndices(List<Integer> indices) {
+        if (indices == null || indices.isEmpty() || elements.isEmpty()) {
+            return List.of();
+        }
+
+        boolean[] included = new boolean[elements.size()];
+        for (Integer index : indices) {
+            if (index == null) {
+                continue;
+            }
+            if (index >= 0 && index < elements.size()) {
+                included[index] = true;
+            }
+        }
+
+        List<Integer> normalized = new ArrayList<>();
+        for (int i = 0; i < included.length; i++) {
+            if (included[i]) {
+                normalized.add(i);
+            }
+        }
+        return normalized;
+    }
+
     private void trimUndoHistory() {
         while (undoStack.size() > HISTORY_LIMIT) {
             undoStack.removeLast();
@@ -553,6 +699,17 @@ public final class CustomHudState {
         redoStack.clear();
     }
 
-    private record Snapshot(List<HudElement> elements, int canvasWidth, int canvasHeight, int hudX, int hudY) {
+    private static int normalizeHudScalePercent(int value) {
+        return HudRenderUtil.clamp(value, MIN_HUD_SCALE_PERCENT, MAX_HUD_SCALE_PERCENT);
+    }
+
+    private record Snapshot(
+            List<HudElement> elements,
+            int canvasWidth,
+            int canvasHeight,
+            int hudX,
+            int hudY,
+            int hudScalePercent
+    ) {
     }
 }

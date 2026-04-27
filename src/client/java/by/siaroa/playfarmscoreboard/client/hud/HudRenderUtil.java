@@ -75,6 +75,24 @@ public final class HudRenderUtil {
         context.fill(left, top, left + clampedSize, top + clampedSize, color);
     }
 
+    public static void drawStrokedRect(DrawContext context, int x, int y, int width, int height, int color) {
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+
+        context.fill(x, y, x + width, y + 1, color);
+        if (height > 1) {
+            context.fill(x, y + height - 1, x + width, y + height, color);
+        }
+
+        if (height > 2) {
+            context.fill(x, y + 1, x + 1, y + height - 1, color);
+            if (width > 1) {
+                context.fill(x + width - 1, y + 1, x + width, y + height - 1, color);
+            }
+        }
+    }
+
     public static void drawCircleOutline(DrawContext context, int centerX, int centerY, int radius, int color) {
         int r = Math.max(1, radius);
         int x = r;
