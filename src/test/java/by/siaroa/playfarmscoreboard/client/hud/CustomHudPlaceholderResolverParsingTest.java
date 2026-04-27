@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class CustomHudPlaceholderResolverParsingTest {
     private static Method parseFlyMethod;
     private static Method parseAutoPlantMethod;
+    private static Method parseChannelMethod;
 
     @BeforeAll
     static void prepare() throws NoSuchMethodException {
@@ -18,6 +19,8 @@ class CustomHudPlaceholderResolverParsingTest {
         parseFlyMethod.setAccessible(true);
         parseAutoPlantMethod = CustomHudPlaceholderResolver.class.getDeclaredMethod("parseAutoPlantText", String.class);
         parseAutoPlantMethod.setAccessible(true);
+        parseChannelMethod = CustomHudPlaceholderResolver.class.getDeclaredMethod("parseChannelText", String.class);
+        parseChannelMethod.setAccessible(true);
     }
 
     @Test
@@ -56,11 +59,27 @@ class CustomHudPlaceholderResolverParsingTest {
         assertEquals("", parseFly(message));
     }
 
+    @Test
+    void parseFarmChannelFromAlphabetCode() throws Exception {
+        String message = "P 3C";
+        assertEquals("농장 3번 채널", parseChannel(message));
+    }
+
+    @Test
+    void parseFarmChannelFromKoreanDisplay() throws Exception {
+        String message = "현재 위치: 농장 12번 채널";
+        assertEquals("농장 12번 채널", parseChannel(message));
+    }
+
     private static String parseFly(String raw) throws InvocationTargetException, IllegalAccessException {
         return (String) parseFlyMethod.invoke(null, raw);
     }
 
     private static String parseAutoPlant(String raw) throws InvocationTargetException, IllegalAccessException {
         return (String) parseAutoPlantMethod.invoke(null, raw);
+    }
+
+    private static String parseChannel(String raw) throws InvocationTargetException, IllegalAccessException {
+        return (String) parseChannelMethod.invoke(null, raw);
     }
 }

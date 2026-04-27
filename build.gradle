@@ -25,6 +25,9 @@ def mcVersion = project.minecraft_version.toString()
 def versionedClientDir = mcVersion.startsWith("1.21.4")
         ? "src/client1214/java"
         : "src/client1211/java"
+def artifactSuffix = mcVersion.startsWith("1.21.4") ? "-mc1_21_4" : ""
+def mainJarFileName = "${project.archives_base_name}-${project.mod_version}${artifactSuffix}.jar"
+def sourcesJarFileName = "${project.archives_base_name}-${project.mod_version}${artifactSuffix}-sources.jar"
 def supportedVersionDefaults = [
         "1.21.4" : [yarn: "1.21.4+build.8", fabricApi: "0.119.4+1.21.4"],
         "1.21.11": [yarn: "1.21.11+build.5", fabricApi: "0.141.3+1.21.11"]
@@ -109,9 +112,22 @@ java {
 }
 
 jar {
+    archiveFileName = mainJarFileName
     from("LICENSE") {
         rename { "${it}_${project.archives_base_name}" }
     }
+}
+
+tasks.named("sourcesJar") {
+    archiveFileName = sourcesJarFileName
+}
+
+tasks.named("remapJar") {
+    archiveFileName = mainJarFileName
+}
+
+tasks.named("remapSourcesJar") {
+    archiveFileName = sourcesJarFileName
 }
 
 // configure the maven publication

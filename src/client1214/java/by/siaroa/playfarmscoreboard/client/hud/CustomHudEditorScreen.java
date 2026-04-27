@@ -889,7 +889,7 @@ public final class CustomHudEditorScreen extends Screen {
             toolY += 20;
         }
 
-        int actionY = toolY + 6;
+        int actionY = toolY + 10;
         int actionWidth = toolWidth;
         for (LayerAction layerAction : LayerAction.values()) {
             layerButtons.put(layerAction, new UiRect(toolX, actionY, actionWidth, 16));
@@ -1166,7 +1166,7 @@ public final class CustomHudEditorScreen extends Screen {
         String guide = "HUD 위치/크기를 조정한 뒤 [완료]를 누르세요";
         int guideWidth = this.textRenderer.getWidth(guide) + 12;
         int guideX = (this.width - guideWidth) / 2;
-        int guideY = Math.max(8, hudScaleDownButtonRect.y - 18);
+        int guideY = Math.max(8, hudScaleDownButtonRect.y - 22);
         context.fillGradient(guideX, guideY, guideX + guideWidth, guideY + 14, 0xC4213442, 0xC4182732);
         HudRenderUtil.drawStrokedRect(context, guideX, guideY, guideWidth, 14, 0xFFA5C8BF);
         context.drawTextWithShadow(this.textRenderer, guide, guideX + 6, guideY + 3, 0xFFF1F9F6);

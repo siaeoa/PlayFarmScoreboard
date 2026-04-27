@@ -3,19 +3,7 @@ package by.siaroa.playfarmscoreboard.client.hud;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 
-import java.lang.reflect.Method;
-
 public final class CustomHudRenderer {
-    private static Class<?> matrixClass;
-    private static Method matrixPushMethod;
-    private static Method matrixPopMethod;
-    private static Method matrixTranslate2fMethod;
-    private static Method matrixTranslate2dMethod;
-    private static Method matrixTranslate3fMethod;
-    private static Method matrixTranslate3dMethod;
-    private static Method matrixScale2fMethod;
-    private static Method matrixScale3fMethod;
-
     private CustomHudRenderer() {
     }
 
@@ -163,103 +151,18 @@ public final class CustomHudRenderer {
     }
 
     private static void pushMatrix(Object matrices) {
-        ensureMatrixMethods(matrices);
-        invokeNoArg(matrixPushMethod, matrices);
+        HudMatrixCompat.push(matrices);
     }
 
     private static void popMatrix(Object matrices) {
-        ensureMatrixMethods(matrices);
-        invokeNoArg(matrixPopMethod, matrices);
+        HudMatrixCompat.pop(matrices);
     }
 
     private static void translateMatrix(Object matrices, int x, int y) {
-        ensureMatrixMethods(matrices);
-        if (matrixTranslate3fMethod != null) {
-            invoke(matrixTranslate3fMethod, matrices, (float) x, (float) y, 0.0F);
-            return;
-        }
-        if (matrixTranslate3dMethod != null) {
-            invoke(matrixTranslate3dMethod, matrices, (double) x, (double) y, 0.0D);
-            return;
-        }
-        if (matrixTranslate2fMethod != null) {
-            invoke(matrixTranslate2fMethod, matrices, (float) x, (float) y);
-            return;
-        }
-        if (matrixTranslate2dMethod != null) {
-            invoke(matrixTranslate2dMethod, matrices, (double) x, (double) y);
-            return;
-        }
-        throw new IllegalStateException("Matrix translate method not found");
+        HudMatrixCompat.translate(matrices, x, y);
     }
 
     private static void scaleMatrix(Object matrices, float scale) {
-        ensureMatrixMethods(matrices);
-        if (matrixScale3fMethod != null) {
-            invoke(matrixScale3fMethod, matrices, scale, scale, 1.0F);
-            return;
-        }
-        if (matrixScale2fMethod != null) {
-            invoke(matrixScale2fMethod, matrices, scale, scale);
-            return;
-        }
-        throw new IllegalStateException("Matrix scale method not found");
-    }
-
-    private static void ensureMatrixMethods(Object matrices) {
-        if (matrices == null) {
-            throw new IllegalStateException("DrawContext matrices missing");
-        }
-        Class<?> cls = matrices.getClass();
-        if (cls == matrixClass && matrixPushMethod != null && matrixPopMethod != null) {
-            return;
-        }
-
-        matrixClass = cls;
-        matrixPushMethod = findMethod(cls, "pushMatrix");
-        if (matrixPushMethod == null) {
-            matrixPushMethod = findMethod(cls, "push");
-        }
-
-        matrixPopMethod = findMethod(cls, "popMatrix");
-        if (matrixPopMethod == null) {
-            matrixPopMethod = findMethod(cls, "pop");
-        }
-
-        matrixTranslate2fMethod = findMethod(cls, "translate", float.class, float.class);
-        matrixTranslate2dMethod = findMethod(cls, "translate", double.class, double.class);
-        matrixTranslate3fMethod = findMethod(cls, "translate", float.class, float.class, float.class);
-        matrixTranslate3dMethod = findMethod(cls, "translate", double.class, double.class, double.class);
-        matrixScale2fMethod = findMethod(cls, "scale", float.class, float.class);
-        matrixScale3fMethod = findMethod(cls, "scale", float.class, float.class, float.class);
-
-        if (matrixPushMethod == null || matrixPopMethod == null) {
-            throw new IllegalStateException("Matrix push/pop methods not found");
-        }
-    }
-
-    private static Method findMethod(Class<?> cls, String name, Class<?>... parameterTypes) {
-        try {
-            Method method = cls.getMethod(name, parameterTypes);
-            method.setAccessible(true);
-            return method;
-        } catch (ReflectiveOperationException ignored) {
-            return null;
-        }
-    }
-
-    private static void invokeNoArg(Method method, Object target) {
-        if (method == null) {
-            throw new IllegalStateException("Missing matrix method");
-        }
-        invoke(method, target);
-    }
-
-    private static void invoke(Method method, Object target, Object... args) {
-        try {
-            method.invoke(target, args);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("Failed to invoke matrix method: " + method.getName(), e);
-        }
+        HudMatrixCompat.scale(matrices, scale);
     }
 }

@@ -22,7 +22,7 @@ public final class CustomHudPlaceholderResolver {
     private static final Pattern FLY_TOKEN = Pattern.compile("(?i)\\{fly\\}");
     private static final Pattern AUTO_PLANT_TOKEN = Pattern.compile("(?i)\\{auto\\s*plant\\}");
     private static final Pattern NUMBER_PATTERN = Pattern.compile("(?<![0-9,])(\\d{1,3}(?:,\\d{3})*|\\d+)(?![0-9,])");
-    private static final Pattern CHANNEL_PATTERN = Pattern.compile("([LlIi])\\s*(\\d{1,3})(?:\\s*[cC])?");
+    private static final Pattern CHANNEL_PATTERN = Pattern.compile("([LlIiPp])\\s*(\\d{1,3})(?:\\s*[cC])?");
     private static final Pattern FLY_DAY_PATTERN = Pattern.compile("(\\d+)\\s*일");
     private static final Pattern FLY_HOUR_PATTERN = Pattern.compile("(\\d+)\\s*(?:시|시간)");
     private static final Pattern FLY_MIN_PATTERN = Pattern.compile("(\\d+)\\s*분");
@@ -35,7 +35,7 @@ public final class CustomHudPlaceholderResolver {
     private static final Pattern AUTO_PLANT_KEYWORD_PATTERN = Pattern.compile("(?:자동\\s*심기|자심)");
     private static final Pattern AUTO_PLANT_REMAINING_PATTERN = Pattern.compile("남은\\s*횟수\\s*[:：]\\s*([0-9][0-9,]*)\\s*회");
     private static final Pattern AUTO_PLANT_PATTERN = Pattern.compile("(?:자동\\s*심기|자심)\\s*(?:[:：]\\s*)?([0-9][0-9,]*)\\s*회");
-    private static final Pattern CHANNEL_DISPLAY_PATTERN = Pattern.compile("(스폰|섬)\\s*(\\d{1,3})\\s*(?:번\\s*)?채널", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CHANNEL_DISPLAY_PATTERN = Pattern.compile("(스폰|섬|농장)\\s*(\\d{1,3})\\s*(?:번\\s*)?채널", Pattern.CASE_INSENSITIVE);
     private static final Pattern FORMAT_CODE_PATTERN = Pattern.compile("§.");
 
     private static long lastSampleTick = Long.MIN_VALUE;
@@ -283,10 +283,12 @@ public final class CustomHudPlaceholderResolver {
             foundChannel = channelMatcher.find();
         }
         if (foundChannel) {
-            char scope = channelMatcher.group(1).charAt(0);
+            char scope = Character.toLowerCase(channelMatcher.group(1).charAt(0));
             String channelNumber = channelMatcher.group(2);
-            if (scope == 'L') {
+            if (scope == 'l') {
                 channelDisplay = "스폰 " + channelNumber + "번 채널";
+            } else if (scope == 'p') {
+                channelDisplay = "농장 " + channelNumber + "번 채널";
             } else {
                 channelDisplay = "섬 " + channelNumber + "번 채널";
             }
@@ -416,10 +418,14 @@ public final class CustomHudPlaceholderResolver {
             if (scope == null || channelNumber == null) {
                 return "";
             }
-            boolean spawn = scope.toLowerCase(Locale.ROOT).contains("스폰");
-            return spawn
-                    ? "스폰 " + channelNumber + "번 채널"
-                    : "섬 " + channelNumber + "번 채널";
+            String loweredScope = scope.toLowerCase(Locale.ROOT);
+            if (loweredScope.contains("스폰")) {
+                return "스폰 " + channelNumber + "번 채널";
+            }
+            if (loweredScope.contains("농장")) {
+                return "농장 " + channelNumber + "번 채널";
+            }
+            return "섬 " + channelNumber + "번 채널";
         }
 
         String compact = normalizeForParsing(normalized);
@@ -436,6 +442,9 @@ public final class CustomHudPlaceholderResolver {
         String channelNumber = channelMatcher.group(2);
         if (scope == 'l') {
             return "스폰 " + channelNumber + "번 채널";
+        }
+        if (scope == 'p') {
+            return "농장 " + channelNumber + "번 채널";
         }
         return "섬 " + channelNumber + "번 채널";
     }
