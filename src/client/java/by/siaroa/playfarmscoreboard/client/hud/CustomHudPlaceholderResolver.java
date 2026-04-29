@@ -34,6 +34,7 @@ public final class CustomHudPlaceholderResolver {
     private static final Pattern AUTO_PLANT_CURRENT_PATTERN = Pattern.compile("\\(현재\\s*[:：]\\s*([0-9][0-9,]*)\\s*회\\s*\\)");
     private static final Pattern AUTO_PLANT_KEYWORD_PATTERN = Pattern.compile("(?:자동\\s*심기|자심)");
     private static final Pattern AUTO_PLANT_REMAINING_PATTERN = Pattern.compile("남은\\s*횟수\\s*[:：]\\s*([0-9][0-9,]*)\\s*회");
+    private static final Pattern AUTO_PLANT_NOTICE_PATTERN = Pattern.compile("ꕙ[^\\n\\r]*?([0-9][0-9,]*)\\s*회");
     private static final Pattern AUTO_PLANT_PATTERN = Pattern.compile("(?:자동\\s*심기|자심)\\s*(?:[:：]\\s*)?([0-9][0-9,]*)\\s*회");
     private static final Pattern CHANNEL_DISPLAY_PATTERN = Pattern.compile("(스폰|섬|농장)\\s*(\\d{1,3})\\s*(?:번\\s*)?채널", Pattern.CASE_INSENSITIVE);
     private static final Pattern FORMAT_CODE_PATTERN = Pattern.compile("§.");
@@ -90,6 +91,19 @@ public final class CustomHudPlaceholderResolver {
             recentChannelDisplay = latestChannel;
             cachedSnapshot = cachedSnapshot.withChannel(latestChannel);
         }
+    }
+
+    public static void observeChatMessage(String rawChatText) {
+        if (rawChatText == null || rawChatText.isBlank()) {
+            return;
+        }
+        if (rawChatText.indexOf('ꓼ') >= 0) {
+            return;
+        }
+        if (rawChatText.indexOf('ꕜ') < 0 && rawChatText.indexOf('ꕙ') < 0) {
+            return;
+        }
+        observeOverlayMessage(rawChatText);
     }
 
     private static BossBarSnapshot resolveSnapshot() {
@@ -305,6 +319,10 @@ public final class CustomHudPlaceholderResolver {
         if (normalized.isBlank()) {
             return "";
         }
+        boolean hasFlyKeyword = FLY_KEYWORD_PATTERN.matcher(normalized).find();
+        if (!hasFlyKeyword) {
+            return "";
+        }
 
         String lower = normalized.toLowerCase(Locale.ROOT);
         String parseTarget = "";
@@ -317,7 +335,7 @@ public final class CustomHudPlaceholderResolver {
             dedicatedRemainingSource = true;
         } else {
             Matcher remainingMatcher = FLY_REMAINING_PATTERN.matcher(normalized);
-            if (remainingMatcher.find() && FLY_KEYWORD_PATTERN.matcher(normalized).find()) {
+            if (remainingMatcher.find()) {
                 parseTarget = remainingMatcher.group(1);
                 dedicatedRemainingSource = true;
             }
@@ -363,6 +381,10 @@ public final class CustomHudPlaceholderResolver {
         if (normalized.isBlank()) {
             return "";
         }
+        boolean hasAutoPlantKeyword = AUTO_PLANT_KEYWORD_PATTERN.matcher(normalized).find();
+        if (!hasAutoPlantKeyword) {
+            return "";
+        }
 
         Matcher currentMatcher = AUTO_PLANT_CURRENT_PATTERN.matcher(normalized);
         if (currentMatcher.find()) {
@@ -370,8 +392,13 @@ public final class CustomHudPlaceholderResolver {
         }
 
         Matcher remainingMatcher = AUTO_PLANT_REMAINING_PATTERN.matcher(normalized);
-        if (remainingMatcher.find() && AUTO_PLANT_KEYWORD_PATTERN.matcher(normalized).find()) {
+        if (remainingMatcher.find()) {
             return formatAutoPlantCount(remainingMatcher.group(1));
+        }
+
+        Matcher noticeMatcher = AUTO_PLANT_NOTICE_PATTERN.matcher(normalized);
+        if (noticeMatcher.find()) {
+            return formatAutoPlantCount(noticeMatcher.group(1));
         }
 
         Matcher matcher = AUTO_PLANT_PATTERN.matcher(normalized);

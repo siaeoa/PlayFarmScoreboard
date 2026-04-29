@@ -34,8 +34,7 @@ public abstract class ChatHudMixin {
         if (message == null) {
             return;
         }
-        // 채팅으로 오는 서버 안내문도 같은 파서로 처리해 HUD 값 누락을 줄인다.
-        CustomHudPlaceholderResolver.observeOverlayMessage(message.getString());
+        // 채팅은 서버 접두 마커가 있는 메시지만 파싱한다.
+        CustomHudPlaceholderResolver.observeChatMessage(message.getString());
     }
 }
-
